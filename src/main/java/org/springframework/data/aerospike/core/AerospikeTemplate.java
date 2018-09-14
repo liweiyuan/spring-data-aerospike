@@ -291,6 +291,20 @@ public class AerospikeTemplate implements AerospikeOperations {
 		}
 	}
 
+	public boolean delete(byte[] id, Class<?> type) {
+		Assert.notNull(id, "Id must not be null!");
+		Assert.notNull(type, "Type must not be null!");
+		try {
+			AerospikePersistentEntity<?> entity = mappingContext.getPersistentEntity(type);
+			Key key = getGenderKey(id, entity);
+
+			return this.client.delete(null, key);
+		} catch (AerospikeException e) {
+			DataAccessException translatedException = exceptionTranslator.translateExceptionIfPossible(e);
+			throw translatedException == null ? e : translatedException;
+		}
+	}
+
 	@Override
 	public boolean delete(Serializable id, Class<?> type) {
 		Assert.notNull(id, "Id must not be null!");
@@ -314,6 +328,21 @@ public class AerospikeTemplate implements AerospikeOperations {
 			converter.write(objectToDelete, data);
 
 			return this.client.delete(null, data.getKey());
+		} catch (AerospikeException e) {
+			DataAccessException translatedException = exceptionTranslator.translateExceptionIfPossible(e);
+			throw translatedException == null ? e : translatedException;
+		}
+	}
+
+	public boolean exists(byte[] id, Class<?> type) {
+		Assert.notNull(id, "Id must not be null!");
+		Assert.notNull(type, "Type must not be null!");
+		try {
+			AerospikePersistentEntity<?> entity = mappingContext.getPersistentEntity(type);
+			Key key = getGenderKey(id, entity);
+
+			Record record = this.client.operate(null, key, Operation.getHeader());
+			return record != null;
 		} catch (AerospikeException e) {
 			DataAccessException translatedException = exceptionTranslator.translateExceptionIfPossible(e);
 			throw translatedException == null ? e : translatedException;
@@ -354,6 +383,34 @@ public class AerospikeTemplate implements AerospikeOperations {
 			((EntityIterator<T>) iterator).close();
 		}
 		return scanList;
+	}
+
+	public <T> T findById(byte[] id,Class<T> clz){
+
+		Assert.notNull(id,"Id must not be null!");
+		Assert.notNull(clz,"Clz must not be null!");
+
+		try {
+			AerospikePersistentEntity<?> entity = mappingContext.getPersistentEntity(clz);
+
+			Key key=getGenderKey(id,entity);
+			Record record;
+			if(entity.isTouchOnRead()){
+				Assert.state(!entity.hasExpirationProperty(), "Touch on read is not supported for expiration property");
+				record = getAndTouch(key, entity.getExpiration());
+			}else {
+				record=this.client.get(null,key);
+			}
+			return mapToEntity(key,clz,record);
+		}catch (AerospikeException e) {
+			//touch operation returns error if key not found
+			if (e.getResultCode() == ResultCode.KEY_NOT_FOUND_ERROR) {
+				return null;
+			}
+
+			DataAccessException translatedException = exceptionTranslator.translateExceptionIfPossible(e);
+			throw translatedException == null ? e : translatedException;
+		}
 	}
 
 	@Override
